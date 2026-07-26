@@ -30,6 +30,6 @@ jobs:
           context: .
           file: ./docker/Dockerfile
           push: true
-          tags: dat882002np/vllm-optimized:latest
+          tags: buonngu/vllm-optimized:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
