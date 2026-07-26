@@ -664,6 +664,18 @@ class Scheduler(SchedulerInterface):
 
         # Next, schedule the WAITING requests.
         if not preempted_reqs and self._pause_state == PauseState.UNPAUSED:
+            # Reorder self.waiting to prioritize cache-affinity hits
+            if self.policy == SchedulingPolicy.FCFS and len(self.waiting) > 1:
+                req_hits = []
+                for req in self.waiting:
+                    _, hit_len, _ = self.kv_cache_manager.get_computed_blocks(req)
+                    req_hits.append((hit_len, req))
+                # Stable sort: highest hit_len first
+                req_hits.sort(key=lambda x: x[0], reverse=True)
+                self.waiting.clear()
+                for _, req in req_hits:
+                    self.waiting.add_request(req)
+
             step_skipped_waiting = create_request_queue(self.policy)
 
             while (self.waiting or self.skipped_waiting) and token_budget > 0:
