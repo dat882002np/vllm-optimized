@@ -12,6 +12,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Free Disk Space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf "/usr/local/share/boost"
+          sudo rm -rf /usr/share/swift
+          df -h
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -31,5 +40,7 @@ jobs:
           file: ./docker/Dockerfile
           push: true
           tags: buonngu/vllm-optimized:latest
+          build-args: |
+            max_jobs=1
           cache-from: type=gha
           cache-to: type=gha,mode=max
