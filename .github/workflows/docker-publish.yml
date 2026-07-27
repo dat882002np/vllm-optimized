@@ -40,7 +40,5 @@ jobs:
           file: ./docker/Dockerfile
           push: true
           tags: buonngu/vllm-optimized:latest
-          build-args: |
-            max_jobs=1
           cache-from: type=gha
           cache-to: type=gha,mode=max
