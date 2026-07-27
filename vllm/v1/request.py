@@ -333,6 +333,13 @@ class Request:
         """
         if self.priority != other.priority:
             return self.priority < other.priority
+
+        # Prioritize higher cache hit lengths (smaller in min-heap context)
+        self_hit = getattr(self, "temp_hit_len", 0)
+        other_hit = getattr(other, "temp_hit_len", 0)
+        if self_hit != other_hit:
+            return self_hit > other_hit
+
         if self.arrival_time != other.arrival_time:
             return self.arrival_time < other.arrival_time
         if self.request_id != other.request_id:

@@ -664,17 +664,21 @@ class Scheduler(SchedulerInterface):
 
         # Next, schedule the WAITING requests.
         if not preempted_reqs and self._pause_state == PauseState.UNPAUSED:
-            # Reorder self.waiting to prioritize cache-affinity hits
-            if self.policy == SchedulingPolicy.FCFS and len(self.waiting) > 1:
-                req_hits = []
-                for req in self.waiting:
-                    _, hit_len, _ = self.kv_cache_manager.get_computed_blocks(req)
-                    req_hits.append((hit_len, req))
-                # Stable sort: highest hit_len first
-                req_hits.sort(key=lambda x: x[0], reverse=True)
-                self.waiting.clear()
-                for _, req in req_hits:
-                    self.waiting.add_request(req)
+            # Reorder waiting queues to prioritize cache-affinity hits
+            for q in (self.waiting, self.skipped_waiting):
+                if len(q) > 1:
+                    for req in q:
+                        _, hit_len, _ = self.kv_cache_manager.get_computed_blocks(req)
+                        req.temp_hit_len = hit_len
+                    if self.policy == SchedulingPolicy.FCFS:
+                        req_hits = list(q)
+                        req_hits.sort(key=lambda x: getattr(x, "temp_hit_len", 0), reverse=True)
+                        q.clear()
+                        for req in req_hits:
+                            q.add_request(req)
+                    elif self.policy == SchedulingPolicy.PRIORITY:
+                        import heapq
+                        heapq.heapify(q._heap)
 
             step_skipped_waiting = create_request_queue(self.policy)
 

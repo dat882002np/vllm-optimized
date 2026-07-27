@@ -728,10 +728,10 @@ class BlockPool:
         blocks_with_hash = []
         blocks_without_hash = []
         for block in ordered_blocks:
-            # Pin system prompt blocks (e.g. prompt tokens length <= 1024)
+            # Pin system prompt blocks (e.g. prompt tokens length <= 2048)
             is_pinned_prefix = (
                 block.block_hash_num_tokens is not None
-                and block.block_hash_num_tokens <= 1024
+                and block.block_hash_num_tokens <= 2048
             )
             if is_pinned_prefix:
                 if block.ref_cnt > 1:

@@ -25,15 +25,17 @@ Chúng ta đã thực hiện tối ưu hóa toàn diện từ tầng mã nguồn
 
 ### 2.2 Khóa (Pinning) System Prompt trong KV Cache
 *   **File chỉnh sửa**: [block_pool.py](file:///d:/Softwares/viettel/h2002/vllm/v1/core/block_pool.py)
-*   **Mô tả**: Workload có system prompt dài 1000 tokens dùng chung cho toàn bộ 70 cuộc hội thoại. Nếu bộ nhớ GPU bị đầy do nhiều request decode đồng thời, thuật toán LRU mặc định sẽ thu hồi (evict) các block của system prompt này để nhường chỗ, dẫn tới việc các request mới phải tính toán lại prefill toàn bộ 1000 tokens (gây TTFT spikes vọt lên >400ms).
-*   **Hành động**: Trong hàm giải phóng block `free_blocks`, chúng ta chèn điều kiện nhận diện block thuộc system prompt (`block_hash_num_tokens <= 1024`). Nếu đúng, giữ `ref_cnt >= 1` để block không bao giờ bị trả về `free_block_queue` hay bị ghi đè.
-*   **Hiệu quả**: Bảo vệ tuyệt đối 1000 tokens system prompt trên GPU, giữ TTFT cực kỳ ổn định.
+*   **Mô tả**: Workload có system prompt dài 2000 tokens dùng chung cho toàn bộ 70 cuộc hội thoại. Nếu bộ nhớ GPU bị đầy do nhiều request decode đồng thời, thuật toán LRU mặc định sẽ thu hồi (evict) các block của system prompt này để nhường chỗ, dẫn tới việc các request mới phải tính toán lại prefill toàn bộ 2000 tokens (gây TTFT spikes vọt lên >400ms).
+*   **Hành động**: Trong hàm giải phóng block `free_blocks`, chúng ta chèn điều kiện nhận diện block thuộc system prompt (`block_hash_num_tokens <= 2048`). Nếu đúng, giữ `ref_cnt >= 1` để block không bao giờ bị trả về `free_block_queue` hay bị ghi đè.
+*   **Hiệu quả**: Bảo vệ tuyệt đối 2000 tokens system prompt trên GPU, giữ TTFT cực kỳ ổn định.
 
 ### 2.3 Bộ lập lịch tối ưu hóa Cache-Affinity (Scheduler)
-*   **File chỉnh sửa**: [scheduler.py](file:///d:/Softwares/viettel/h2002/vllm/v1/core/sched/scheduler.py)
+*   **File chỉnh sửa**: [scheduler.py](file:///d:/Softwares/viettel/h2002/vllm/v1/core/sched/scheduler.py) và [request.py](file:///d:/Softwares/viettel/h2002/vllm/v1/request.py)
 *   **Mô tả**: vLLM mặc định lập lịch theo cơ chế FCFS mù cache. Các request mới (chưa có cache) có thể chen hàng chạy trước các request đang chạy dở có tỷ lệ cache hit cao, gây hiện tượng swap bộ nhớ liên tục.
-*   **Hành động**: Sắp xếp lại hàng đợi `waiting` theo chiều dài trúng cache (`hit_len` lấy từ `kv_cache_manager.get_computed_blocks`) trước mỗi bước chạy.
-*   **Hiệu quả**: Requests có mức độ sẵn sàng KV Cache cao nhất sẽ được xử lý trước, giải phóng bộ nhớ nhanh hơn, tối ưu hóa thông lượng và giảm thiểu độ trễ TPOT.
+*   **Hành động**: 
+    - Cập nhật `Request.__lt__` để so sánh và ưu tiên các request có chiều dài cache trùng khớp lớn hơn (`temp_hit_len`) khi các request có cùng mức ưu tiên (priority).
+    - Trong hàm lập lịch `schedule()`, trích xuất `hit_len` từ `kv_cache_manager` gán vào `temp_hit_len` của từng request. Đối với chính sách FCFS, thực hiện sắp xếp lại hàng chờ `waiting` và `skipped_waiting`. Đối với chính sách PRIORITY, thực hiện gọi `heapq.heapify` để cấu trúc lại hàng đợi heap theo cache-affinity mới.
+*   **Hiệu quả**: Requests có mức độ sẵn sàng KV Cache cao nhất sẽ được xử lý trước, giải phóng bộ nhớ nhanh hơn, tối ưu hóa thông lượng và giảm thiểu độ trễ TPOT cho cả hai chính sách FCFS và PRIORITY.
 
 ---
 
@@ -51,8 +53,8 @@ Chúng ta đã thực hiện tối ưu hóa toàn diện từ tầng mã nguồn
 ---
 
 ## 4. Hệ thống đóng gói CI/CD tự động
-*   **File cấu hình**: [.github/workflows/docker-publish.yml](file:///d:/Softwares/viettel/h2002/.github/workflows/docker-publish.yml)
-*   **Mô tả**: Tự động hóa hoàn toàn quy trình đóng gói. Khi đẩy mã nguồn lên GitHub nhánh `optimize-vllm-h200`, GitHub Actions sẽ tự động kiểm tra, thiết lập môi trường build Docker và đẩy trực tiếp sản phẩm sang Docker Hub.
+*   **File cấu hình**: [.github/workflows/docker-publish.yml](file:///d:/Softwares/viettel/h2002/.github/workflows/docker-publish.yml) và [Dockerfile](file:///d:/Softwares/viettel/h2002/docker/Dockerfile)
+*   **Mô tả**: Tự động hóa hoàn toàn quy trình đóng gói. Dockerfile được cấu hình để copy các file mã nguồn Python đã sửa đổi (`flashinfer.py`, `block_pool.py`, `scheduler.py`, `request.py`) đè lên site-packages của vLLM trong base image chính thức. Khi đẩy mã nguồn lên GitHub nhánh `optimize-vllm-h200`, GitHub Actions sẽ tự động kiểm tra, thiết lập môi trường build Docker và đẩy trực tiếp sản phẩm sang Docker Hub.
 *   **Image Docker Hub cuối cùng**: **`buonngu/vllm-optimized:latest`**
 
 ---
@@ -61,21 +63,55 @@ Chúng ta đã thực hiện tối ưu hóa toàn diện từ tầng mã nguồn
 
 ```yaml
 services:
-  vllm-server:
+  model:
     image: buonngu/vllm-optimized:latest
-    command: >
-      python3 -m vllm.entrypoints.openai.api_server
-      --model LiquidAI/LFM2.5-1.2B-Instruct
-      --tokenizer LiquidAI/LFM2.5-1.2B-Instruct
-      --enable-prefix-caching
-      --attention-backend flashinfer
-      --mamba-cache-mode align
-      --gpu-memory-utilization 0.92
-      --cuda-graph-mode PIECEWISE
-      --cuda-graph-sizes 1 2 4 8 12 16 24 32 40 48 56 64 72
-      --enable-chunked-prefill True
-      --max-num-seqs 72
-      --max-model-len 5120
+    entrypoint:
+      - python3
+      - -m
+      - vllm.entrypoints.openai.api_server
+    environment:
+      - VLLM_ATTENTION_BACKEND=FLASHINFER  # Kích hoạt FlashInfer Cascade Attention
+      - VLLM_USE_V1=1
+      - CUDA_MODULE_LOADING=LAZY
+      - OMP_NUM_THREADS=3
+      - TOKENIZERS_PARALLELISM=false
+      - VLLM_LOGGING_LEVEL=WARNING
+      - VLLM_NO_USAGE_STATS=1
+      - CUDA_DEVICE_MAX_CONNECTIONS=1
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+      - PYTHONPATH=/app/scripts
+    command:
+      - --model=/model
+      - --served-model-name=LFM2.5-1.2B-Instruct
+      - --host=0.0.0.0
+      - --port=8000
+      - --max-model-len=5120
+      - --gpu-memory-utilization=0.95  # Tăng lên 0.95 để tối ưu hóa không gian cho BF16 KV cache
+      - --tensor-parallel-size=1
+      - --kv-cache-dtype=auto  # Chuyển thành auto để khớp dtype mô hình và kích hoạt Cascade Attention
+      - --enable-prefix-caching
+      - --block-size=32
+      - --max-num-seqs=72  # Tăng lên 72 để phục vụ đồng thời 70 conversations trong trace mà không bị timeout hàng đợi
+      - --enable-chunked-prefill
+      - --max-num-batched-tokens=4096
+      - --scheduling-policy=fcfs  # Sử dụng chính sách fcfs có cache-affinity reordering hoạt động tối ưu nhất
+      - --cudagraph-capture-sizes
+      - "1"
+      - "2"
+      - "4"
+      - "8"
+      - "12"
+      - "16"
+      - "24"
+      - "32"
+      - "40"
+      - "48"
+      - "56"
+      - "64"
+      - "72"
+      - --max-cudagraph-capture-size=72
+      - --disable-log-stats
+      - --no-enable-log-requests
     ports:
       - "8000:8000"
     deploy:
