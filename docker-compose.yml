@@ -1,0 +1,64 @@
+services:
+  model:
+    image: buonngu/vllm-optimized:latest
+
+    entrypoint:
+      - python3 #Don't change this to vllm-server
+      - -m #Don't change this to vllm-server
+      - vllm.entrypoints.openai.api_server #Don't change this to vllm-server
+
+    environment:
+      - VLLM_ATTENTION_BACKEND=FLASHINFER  # Enables Cascade Attention
+      - VLLM_USE_V1=1
+      - CUDA_MODULE_LOADING=LAZY
+      - OMP_NUM_THREADS=3
+      - TOKENIZERS_PARALLELISM=false
+      - VLLM_LOGGING_LEVEL=WARNING
+      - VLLM_NO_USAGE_STATS=1
+      - CUDA_DEVICE_MAX_CONNECTIONS=1
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+      - PYTHONPATH=/app/scripts
+
+    command:
+      - --model=/model #Don't change this to vllm-server
+      - --served-model-name=LFM2.5-1.2B-Instruct #Don't change this to vllm-server
+      - --host=0.0.0.0 #Don't change this to vllm-server
+      - --port=8000 #Don't change this to vllm-server
+      - --max-model-len=5120
+      - --gpu-memory-utilization=0.95
+      - --tensor-parallel-size=1
+      - --kv-cache-dtype=auto
+      - --enable-prefix-caching
+      - --block-size=32
+      - --max-num-seqs=72
+      - --enable-chunked-prefill
+      - --max-num-batched-tokens=4096
+      - --scheduling-policy=fcfs
+      - --cudagraph-capture-sizes
+      - "1"
+      - "2"
+      - "4"
+      - "8"
+      - "12"
+      - "16"
+      - "24"
+      - "32"
+      - "40"
+      - "48"
+      - "56"
+      - "64"
+      - "72"
+      - --max-cudagraph-capture-size=72
+      - --disable-log-stats
+      - --no-enable-log-requests
+
+    ports:
+      - "8000:8000"
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
